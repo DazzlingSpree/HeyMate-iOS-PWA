@@ -62,29 +62,39 @@ function initTimeManager() {
             const days = Math.floor(remainingMs / (1000 * 60 * 60 * 24));
             const hours = Math.floor((remainingMs / (1000 * 60 * 60)) % 24);
             const minutes = Math.floor((remainingMs / (1000 * 60)) % 60);
-            timeDisplay.innerText = `${days}d ${hours}h ${minutes}m remaining`;
+            const seconds = Math.floor((remainingMs / 1000) % 60);
+            timeDisplay.innerText = `${days}d ${hours}h ${minutes}m ${seconds}s remaining`;
         }
     }, 1000);
 }
 
 /* ==========================================================================
-   2. HARDWARE CAMERA ACCESS (AR/IR Fallback for Web)
+   2. HARDWARE CAMERA ACCESS (Raw, Unfiltered Sensor Access)
    ========================================================================== */
 const videoElement = document.getElementById('camera-feed');
 let mediaStream = null;
+let videoTrack = null;
 
 async function initCamera() {
     try {
-        // Request the environment (back) camera on iOS at 4K resolution
+        // Request the environment (back) camera at 4K resolution
+        // getUserMedia natively bypasses Apple's "Deep Fusion" and "Smart HDR" post-processing
+        // giving you the rawest, unfiltered sensor data Safari allows.
         mediaStream = await navigator.mediaDevices.getUserMedia({
             video: {
                 facingMode: 'environment',
-                width: { ideal: 3840 },  // Request 4K width
-                height: { ideal: 2160 }  // Request 4K height
+                width: { ideal: 3840 },
+                height: { ideal: 2160 }
             },
             audio: false
         });
         videoElement.srcObject = mediaStream;
+        videoTrack = mediaStream.getVideoTracks()[0];
+
+        // Wait for video to start before checking hardware capabilities
+        videoElement.onloadedmetadata = () => {
+            setupHardwareControls();
+        };
     } catch (err) {
         console.error("Camera access denied or unavailable", err);
         alert("Please enable camera permissions to use HeyMate.");
@@ -92,71 +102,95 @@ async function initCamera() {
 }
 
 /* ==========================================================================
-   3. CONTROLS (Night Mode & Exposure)
+   3. HARDWARE CONTROLS (No CSS Fake Filters)
    ========================================================================== */
 function initControls() {
-    const btnIr = document.getElementById('btn-ir');
-    const btnExposure = document.getElementById('btn-exposure');
-    const btnCapture = document.getElementById('btn-capture');
-
-    let irMode = false;
-    let exposureMode = false;
-
-    // Toggle Simulated Night Vision
-    btnIr.addEventListener('click', () => {
-        irMode = !irMode;
-        btnIr.innerText = `Night Mode: ${irMode ? 'ON' : 'OFF'}`;
-        updateVideoFilters(irMode, exposureMode);
-    });
-
-    // Toggle High Exposure
-    btnExposure.addEventListener('click', () => {
-        exposureMode = !exposureMode;
-        btnExposure.innerText = `Exp: ${exposureMode ? 'HIGH' : 'AUTO'}`;
-        updateVideoFilters(irMode, exposureMode);
-    });
-
     // Capture & Save Photo locally
+    const btnCapture = document.getElementById('btn-capture');
     btnCapture.addEventListener('click', captureAndSavePhoto);
 }
 
-function updateVideoFilters(ir, exposure) {
-    videoElement.className = '';
-    if (ir) videoElement.classList.add('night-vision-filter');
-    if (exposure) videoElement.classList.add('exposure-filter');
+function setupHardwareControls() {
+    if (!videoTrack) return;
+
+    const capabilities = videoTrack.getCapabilities();
+    const btnIr = document.getElementById('btn-ir');
+    const btnExposure = document.getElementById('btn-exposure');
+
+    window.irMode = false;
+    window.exposureMode = false;
+
+    // 1. Hardware Torch (Flashlight / Night Mode)
+    // We turn on the physical LED rather than faking it with CSS.
+    if (capabilities.torch) {
+        btnIr.addEventListener('click', async () => {
+            window.irMode = !window.irMode;
+            try {
+                await videoTrack.applyConstraints({
+                    advanced: [{ torch: window.irMode }]
+                });
+                btnIr.innerText = `Flash/Night: ${window.irMode ? 'ON' : 'OFF'}`;
+            } catch (err) {
+                console.error("Failed to toggle torch", err);
+            }
+        });
+    } else {
+        btnIr.innerText = "No Flash/IR";
+        btnIr.style.opacity = "0.5";
+    }
+
+    // 2. Hardware Exposure Compensation
+    if (capabilities.exposureCompensation) {
+        btnExposure.addEventListener('click', async () => {
+            window.exposureMode = !window.exposureMode;
+            try {
+                // If toggled, push exposure up (+2 EV), otherwise reset to 0
+                const targetEV = window.exposureMode ? capabilities.exposureCompensation.max : 0;
+                await videoTrack.applyConstraints({
+                    advanced: [{ exposureCompensation: targetEV }]
+                });
+                btnExposure.innerText = `Raw Exp: ${window.exposureMode ? 'HIGH' : 'AUTO'}`;
+            } catch (err) {
+                console.error("Failed to adjust exposure", err);
+            }
+        });
+    } else {
+        btnExposure.innerText = "Exp Locked";
+        btnExposure.style.opacity = "0.5";
+    }
 }
 
 /* ==========================================================================
-   4. LOCAL SECURE SAVING (Saving to iOS Photos)
+   4. LOCAL SECURE SAVING (100% Raw Uncompressed Quality)
    ========================================================================== */
 async function captureAndSavePhoto() {
     if (!mediaStream) return;
 
-    // Create a temporary canvas to draw the video frame
+    // Create a temporary canvas matching EXACT sensor resolution
     const canvas = document.createElement('canvas');
     canvas.width = videoElement.videoWidth;
     canvas.height = videoElement.videoHeight;
     const ctx = canvas.getContext('2d');
 
-    // Draw the current video frame
+    // Draw the raw unmanipulated video frame
     ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
 
-    // Convert canvas to Blob (JPEG)
+    // Convert canvas to Blob at 1.0 (100% MAXIMUM QUALITY, NO COMPRESSION)
     canvas.toBlob(async (blob) => {
-        const file = new File([blob], `HeyMate_${Date.now()}.jpg`, { type: 'image/jpeg' });
+        const file = new File([blob], `HeyMate_RAW_${Date.now()}.jpg`, { type: 'image/jpeg' });
 
         // Use iOS Web Share API to prompt native "Save Image" to local camera roll
         if (navigator.canShare && navigator.canShare({ files: [file] })) {
             try {
                 await navigator.share({
                     files: [file],
-                    title: 'Save Photo',
+                    title: 'Save Raw Photo',
                 });
             } catch (err) {
                 console.log("User cancelled share or error:", err);
             }
         } else {
-            // Fallback for older browsers (direct download link)
+            // Fallback
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
@@ -166,7 +200,7 @@ async function captureAndSavePhoto() {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
-    }, 'image/jpeg', 0.95);
+    }, 'image/jpeg', 1.0);
 }
 
 /* ==========================================================================

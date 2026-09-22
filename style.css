@@ -37,17 +37,6 @@ body, html {
     height: 100%;
     object-fit: cover;
     z-index: 1;
-    transition: filter 0.3s ease;
-}
-
-/* Simulated IR / Night Vision Filter for Web */
-.night-vision-filter {
-    filter: grayscale(100%) contrast(1.5) brightness(1.2) sepia(100%) hue-rotate(80deg);
-}
-
-/* Simulated High Exposure Filter */
-.exposure-filter {
-    filter: brightness(2.0) contrast(1.2);
 }
 
 #ui-layer {
