@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <!-- iOS PWA Meta Tags -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="HeyMate">
+
+    <title>HeyMate</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="stylesheet" href="style.css">
+
+    <!-- iOS Icon (User should replace icon.png in the repo) -->
+    <link rel="apple-touch-icon" href="icon.png">
+</head>
+<body>
+    <div id="app-container">
+        <!-- Camera Viewport -->
+        <video id="camera-feed" autoplay playsinline muted></video>
+
+        <!-- UI Overlay -->
+        <div id="ui-layer">
+            <div class="top-bar">
+                <div id="time-remaining" class="badge">Calculating time...</div>
+                <div id="offline-status" class="badge">Online</div>
+            </div>
+
+            <div class="bottom-bar">
+                <button id="btn-ir" class="control-btn">Night Mode: OFF</button>
+                <button id="btn-capture" class="capture-btn"></button>
+                <button id="btn-exposure" class="control-btn">Auto Exp</button>
+            </div>
+        </div>
+
+        <!-- iOS Safari Install Prompt Popup -->
+        <div id="ios-install-prompt" class="hidden">
+            <button id="close-install-prompt">✖</button>
+            <p><strong>Install HeyMate</strong></p>
+            <p style="margin-top: 8px;">Tap the Share button <svg viewBox="0 0 50 50" width="16" height="16" style="vertical-align: middle; fill: #007aff;"><path d="M25,2.9L10,17.9l1.4,1.4l12.6-12.6v27.6h2v-27.6l12.6,12.6l1.4-1.4L25,2.9z M9,38v9h32v-9h-2v7H11v-7H9z"/></svg> below and select <br><strong>"Add to Home Screen"</strong> to use offline.</p>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+    <script>
+        // Register Service Worker for Offline Support
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js')
+                    .then(reg => console.log('Service Worker Registered', reg))
+                    .catch(err => console.error('Service Worker Error', err));
+            });
+        }
+    </script>
+</body>
+</html>
